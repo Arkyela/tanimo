@@ -47,31 +47,38 @@ function Login() {
   const handleLogin = async (e) => {
     e.preventDefault();
     setMessage('');
+try {
+  const res = await fetch('http://localhost:4000/api/users/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
 
-    try {
-      const res = await fetch('http://localhost:4000/api/users/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
+  if (!res.ok) {
+    const errorData = await res.json();
+    throw new Error(errorData.message || 'Login failed');
+  }
 
-      const data = await res.json();
+  const data = await res.json();
 
-      if (res.ok) {
-        setMessage('✅ Logged in successfully! Redirecting...');
-        setTimeout(() => {
-          if (data.user.role === 'admin') {
-            navigate('/adminDashboard');
-          } else {
-            navigate('/userDashboard');
-          }
-        }, 1000);
-      } else {
-        setMessage(data.message || 'Login failed.');
-      }
-    } catch (err) {
-      setMessage('Login failed. Server error.');
+  localStorage.setItem('token', data.token);
+
+  console.log('User data:', data.user);
+  console.log('User type:', data.user.userType);
+
+  setMessage('✅ Logged in successfully! Redirecting...');
+  setTimeout(() => {
+    if (data.user.userType === 'admin') {
+      navigate('/adminDashboard');
+    } else {
+      navigate('/userDashboard');
     }
+  }, 1000);
+
+} catch (err) {
+  setMessage('Login failed. Server error.');
+}
+
   };
 
   return (

@@ -1,18 +1,77 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
+const API_BASE_URL = 'http://localhost:4000';
 
 function AdminDashboard() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [dateFilter, setDateFilter] = useState('monthly');
   const [userStatusFilter, setUserStatusFilter] = useState('all');
-  const [userData] = useState({
-    name: 'Admin User',
-    role: 'System Administrator',
-    location: 'Head Office',
-    joinDate: '2023'
-  });
+  const [users, setUsers] = useState([]);
+const [loadingUsers, setLoadingUsers] = useState(false);
+const [error, setError] = useState(null);
+ const [userData, setUserData] = useState({
+  name: '',
+  email: '',
+  userType: '',
+  status: '',
+  profilePhoto: '',
+  address: {
+    street: '',
+    city: '',
+    state: '',
+    postalCode: '',
+    country: ''
+  }
+});
+  const [loading, setLoading] = useState(true);
+  const token = localStorage.getItem('token');
+const fetchUsers = async () => {
+  try {
+    setLoadingUsers(true);
+    const token = localStorage.getItem('token');
+    const response = await axios.get(`${API_BASE_URL}/api/users/`, {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
 
+    });
+    setUsers(response.data);
+    setError(null);
+  } catch (err) {
+    setError(err.response?.data?.message || 'Failed to fetch users');
+    console.error('Error fetching users:', err);
+  } finally {
+    setLoadingUsers(false);
+  }
+};
+
+const updateUserStatus = async (userId, newStatus) => {
+  try {
+    const token = localStorage.getItem('token');
+    const response = await axios.put(
+      `${API_BASE_URL}/api/users/${userId}/status`,
+      { status: newStatus },
+      {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      }
+    );
+    
+    setUsers(users.map(user => 
+      user._id === userId ? response.data.user : user
+    ));
+    return { success: true };
+  } catch (err) {
+    console.error('Error updating user status:', err);
+    return { 
+      success: false, 
+      message: err.response?.data?.message || 'Failed to update user status' 
+    };
+  }
+};
   // Settings state
   const [settings, setSettings] = useState({
     notifications: true,
@@ -32,14 +91,6 @@ function AdminDashboard() {
     { id: 3, name: 'Eggplant', timesBought: 156, farmer: 'Pedro Reyes', category: 'Fruit' },
     { id: 4, name: 'Pechay', timesBought: 132, farmer: 'Lorna Tolentino', category: 'Leafy' },
     { id: 5, name: 'Squash', timesBought: 98, farmer: 'Carlos Gomez', category: 'Vine' },
-  ]);
-
-  const [users, setUsers] = useState([
-    { id: 1, name: 'Juan Dela Cruz', email: 'juan@example.com', role: 'Farmer', dateRegistered: '2023-01-15', status: 'active', rating: 4.8 },
-    { id: 2, name: 'Maria Santos', email: 'maria@example.com', role: 'Farmer', dateRegistered: '2023-02-20', status: 'active', rating: 4.9 },
-    { id: 3, name: 'Pedro Reyes', email: 'pedro@example.com', role: 'Vendor', dateRegistered: '2023-03-10', status: 'active', rating: 4.5 },
-    { id: 4, name: 'Lorna Tolentino', email: 'lorna@example.com', role: 'Farmer', dateRegistered: '2023-04-05', status: 'deactivated', rating: 4.2 },
-    { id: 5, name: 'Carlos Gomez', email: 'carlos@example.com', role: 'Vendor', dateRegistered: '2023-05-12', status: 'active', rating: 4.7 },
   ]);
 
   const [stockData] = useState({
@@ -130,16 +181,16 @@ function AdminDashboard() {
     ]
   });
 
-  const totalVendors = users.filter(u => u.role === 'Vendor').length;
-  const totalFarmers = users.filter(u => u.role === 'Farmer').length;
-  const totalActiveUsers = users.filter(u => u.status === 'active').length;
-  const totalDeactivatedUsers = users.filter(u => u.status === 'deactivated').length;
+  const totalVendors = users.filter(u => u.userType === 'vendor').length;
+const totalFarmers = users.filter(u => u.userType === 'farmer').length;
+const totalActiveUsers = users.filter(u => u.status === 'active').length;
+const totalDeactivatedUsers = users.filter(u => u.status === 'deactivated').length;
 
-  // Get top rated farmers
-  const topRatedFarmers = users
-    .filter(u => u.role === 'Farmer')
-    .sort((a, b) => b.rating - a.rating)
-    .slice(0, 5);
+// Get top rated farmers
+const topRatedFarmers = users
+  .filter(u => u.userType === 'farmer')
+  .sort((a, b) => (b.rating || 0) - (a.rating || 0))
+  .slice(0, 5);
 
   // Format last activity time
   const formatLastActivity = (dateString) => {
@@ -167,22 +218,32 @@ function AdminDashboard() {
     setActiveTab(tab);
   };
 
-  const toggleUserStatus = (userId) => {
-    setUsers(users.map(user => 
-      user.id === userId 
-        ? { ...user, status: user.status === 'active' ? 'deactivated' : 'active' } 
-        : user
-    ));
-  };
+  const toggleUserStatus = async (userId) => {
+  const user = users.find(u => u._id === userId);
+  if (!user) return;
+
+  const newStatus = user.status === 'active' ? 'deactivated' : 'active';
+  const result = await updateUserStatus(userId, newStatus);
+  
+  if (!result.success) {
+    alert(result.message);
+  }
+};
+
+useEffect(() => {
+  if (activeTab === 'users') {
+    fetchUsers();
+  }
+}, [activeTab]);
 
   const filteredVegetables = () => {
     return vegetables.sort((a, b) => b.timesBought - a.timesBought);
   };
 
   const filteredUsers = () => {
-    if (userStatusFilter === 'all') return users;
-    return users.filter(user => user.status === userStatusFilter);
-  };
+  if (userStatusFilter === 'all') return users;
+  return users.filter(user => user.status === userStatusFilter);
+};
 
   const handleSettingChange = (settingName, value) => {
     setSettings(prev => ({
@@ -335,83 +396,120 @@ function AdminDashboard() {
         );
       
       case 'users':
-        return (
-          <div className="data-table">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h2 style={{ fontSize: '20px', color: '#2e7d32', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                👥 User Management
-              </h2>
-              <select 
-                value={userStatusFilter} 
-                onChange={(e) => setUserStatusFilter(e.target.value)}
-                style={{
-                  padding: '8px 12px',
-                  borderRadius: '8px',
-                  border: '1px solid #ddd',
-                  background: 'white'
-                }}
-              >
-                <option value="all">All Users</option>
-                <option value="active">Active Only</option>
-                <option value="deactivated">Deactivated</option>
-              </select>
-            </div>
-            
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid #eee' }}>
-                    <th style={{ padding: '12px 15px', textAlign: 'left', fontWeight: '500', color: '#666' }}>Name</th>
-                    <th style={{ padding: '12px 15px', textAlign: 'left', fontWeight: '500', color: '#666' }}>Email</th>
-                    <th style={{ padding: '12px 15px', textAlign: 'left', fontWeight: '500', color: '#666' }}>Role</th>
-                    <th style={{ padding: '12px 15px', textAlign: 'left', fontWeight: '500', color: '#666' }}>Date Registered</th>
-                    <th style={{ padding: '12px 15px', textAlign: 'left', fontWeight: '500', color: '#666' }}>Status</th>
-                    <th style={{ padding: '12px 15px', textAlign: 'left', fontWeight: '500', color: '#666' }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredUsers().map((user, index) => (
-                    <tr key={index} style={{ borderBottom: '1px solid #eee', '&:hover': { background: '#f9f9f9' } }}>
-                      <td style={{ padding: '12px 15px' }}>{user.name}</td>
-                      <td style={{ padding: '12px 15px' }}>{user.email}</td>
-                      <td style={{ padding: '12px 15px' }}>{user.role}</td>
-                      <td style={{ padding: '12px 15px' }}>{user.dateRegistered}</td>
-                      <td style={{ padding: '12px 15px' }}>
-                        <span style={{
-                          padding: '4px 8px',
-                          borderRadius: '12px',
-                          background: user.status === 'active' ? '#e8f5e9' : '#ffebee',
-                          color: user.status === 'active' ? '#2e7d32' : '#c62828',
-                          fontSize: '12px',
-                          fontWeight: '500'
-                        }}>
-                          {user.status === 'active' ? 'Active' : 'Deactivated'}
-                        </span>
-                      </td>
-                      <td style={{ padding: '12px 15px' }}>
-                        <button 
-                          onClick={() => toggleUserStatus(user.id)}
-                          style={{
-                            padding: '6px 12px',
-                            borderRadius: '6px',
-                            border: 'none',
-                            background: user.status === 'active' ? '#ffebee' : '#e8f5e9',
-                            color: user.status === 'active' ? '#c62828' : '#2e7d32',
-                            cursor: 'pointer',
-                            fontWeight: '500'
-                          }}
-                        >
-                          {user.status === 'active' ? 'Deactivate' : 'Activate'}
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        );
+  return (
+    <div className="data-table">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <h2 style={{ fontSize: '20px', color: '#2e7d32', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          👥 User Management
+        </h2>
+        <select 
+          value={userStatusFilter} 
+          onChange={(e) => setUserStatusFilter(e.target.value)}
+          style={{
+            padding: '8px 12px',
+            borderRadius: '8px',
+            border: '1px solid #ddd',
+            background: 'white'
+          }}
+        >
+          <option value="all">All Users</option>
+          <option value="active">Active Only</option>
+          <option value="deactivated">Deactivated</option>
+        </select>
+      </div>
       
+      {/* Add the loading/error states here */}
+      {loadingUsers && (
+        <div style={{ textAlign: 'center', padding: '20px' }}>
+          <p>Loading users...</p>
+        </div>
+      )}
+
+      {error && (
+        <div style={{ 
+          background: '#ffebee', 
+          color: '#c62828', 
+          padding: '15px', 
+          borderRadius: '8px',
+          marginBottom: '20px'
+        }}>
+          {error}
+          <button 
+            onClick={fetchUsers}
+            style={{
+              marginLeft: '10px',
+              padding: '5px 10px',
+              background: '#c62828',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {!loadingUsers && !error && (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid #eee' }}>
+                <th style={{ padding: '12px 15px', textAlign: 'left', fontWeight: '500', color: '#666' }}>Name</th>
+                <th style={{ padding: '12px 15px', textAlign: 'left', fontWeight: '500', color: '#666' }}>Email</th>
+                <th style={{ padding: '12px 15px', textAlign: 'left', fontWeight: '500', color: '#666' }}>Role</th>
+                <th style={{ padding: '12px 15px', textAlign: 'left', fontWeight: '500', color: '#666' }}>Date Registered</th>
+                <th style={{ padding: '12px 15px', textAlign: 'left', fontWeight: '500', color: '#666' }}>Status</th>
+                <th style={{ padding: '12px 15px', textAlign: 'left', fontWeight: '500', color: '#666' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredUsers().map((user) => (
+                <tr key={user._id} style={{ borderBottom: '1px solid #eee', '&:hover': { background: '#f9f9f9' } }}>
+                  <td style={{ padding: '12px 15px' }}>{user.name}</td>
+                  <td style={{ padding: '12px 15px' }}>{user.email}</td>
+                  <td style={{ padding: '12px 15px' }}>{user.userType}</td>
+                  <td style={{ padding: '12px 15px' }}>
+                    {new Date(user.createdAt).toLocaleDateString()}
+                  </td>
+                  <td style={{ padding: '12px 15px' }}>
+                    <span style={{
+                      padding: '4px 8px',
+                      borderRadius: '12px',
+                      background: user.status === 'active' ? '#e8f5e9' : '#ffebee',
+                      color: user.status === 'active' ? '#2e7d32' : '#c62828',
+                      fontSize: '12px',
+                      fontWeight: '500'
+                    }}>
+                      {user.status === 'active' ? 'Active' : 'Deactivated'}
+                    </span>
+                  </td>
+                  <td style={{ padding: '12px 15px' }}>
+                    <button 
+                      onClick={() => toggleUserStatus(user._id)}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        background: user.status === 'active' ? '#ffebee' : '#e8f5e9',
+                        color: user.status === 'active' ? '#c62828' : '#2e7d32',
+                        cursor: 'pointer',
+                        fontWeight: '500'
+                      }}
+                      disabled={loadingUsers}
+                    >
+                      {user.status === 'active' ? 'Deactivate' : 'Activate'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
       case 'products':
         return (
           <div className="data-table">

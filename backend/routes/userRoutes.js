@@ -8,7 +8,7 @@ const router = express.Router();
 
 // Register
 router.post('/register', async (req, res) => {
-  const { username, email, password, bod, gender, address, role } = req.body;
+  const { name, email, password, address, userType, profilePhoto } = req.body;
 
   try {
     const existingUser = await User.findOne({ email });
@@ -17,13 +17,12 @@ router.post('/register', async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const newUser = new User({
-      username,
+      name,
       email,
       password: hashedPassword,
-      bod,
-      gender,
       address,
-      role,
+      userType,        // Optional — defaults to 'user' if not provided
+      profilePhoto,    // Optional — uses default if not provided
     });
 
     await newUser.save();
@@ -45,20 +44,23 @@ router.post('/login', async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ message: 'Invalid email or password' });
 
-    const token = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '1d' });
+    const token = jwt.sign(
+      { id: user._id, role: user.userType },
+      process.env.JWT_SECRET,
+      { expiresIn: '1d' }
+    );
 
     res.json({
       token,
       user: {
         id: user._id,
-        username: user.username,
+        name: user.name,
         email: user.email,
-        gender: user.gender,
-        bod: user.bod,
+        userType: user.userType,
+        status: user.status,
+        profilePhoto: user.profilePhoto,
         address: user.address,
-        profile: user.profile,
-        role: user.role,
-      },
+      }
     });
   } catch (err) {
     console.error(err);
@@ -68,12 +70,12 @@ router.post('/login', async (req, res) => {
 
 // Edit Profile
 router.put('/profile', auth, async (req, res) => {
-  const { username, bod, gender, address, profile } = req.body;
+  const { name, address, profilePhoto } = req.body;
 
   try {
     const updatedUser = await User.findByIdAndUpdate(
       req.user.id,
-      { username, bod, gender, address, profile },
+      { name, address, profilePhoto },
       { new: true }
     );
 
@@ -83,18 +85,85 @@ router.put('/profile', auth, async (req, res) => {
       message: 'Profile updated successfully',
       user: {
         id: updatedUser._id,
-        username: updatedUser.username,
+        name: updatedUser.name,
         email: updatedUser.email,
-        gender: updatedUser.gender,
-        bod: updatedUser.bod,
+        userType: updatedUser.userType,
+        profilePhoto: updatedUser.profilePhoto,
         address: updatedUser.address,
-        profile: updatedUser.profile,
-        role: updatedUser.role,
-      },
+      }
     });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Server error during profile update' });
+  }
+});
+
+router.get('/profile', auth, async (req, res) => {
+    try {
+        res.status(200).json({
+            success: true,
+            user: {
+                id: req.user._id,
+                name: req.user.name,
+                email: req.user.email,
+                profilePhoto: req.user.profilePhoto,
+                address: req.user.address
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ 
+            success: false,
+            message: 'Error fetching profile'
+        });
+    }
+});
+
+// Get all users (admin only)
+router.get('/', auth, async (req, res) => {
+  try {
+    // Check if user is admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Unauthorized' });
+    }
+
+    const users = await User.find({}, '-password');
+    res.json(users);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error fetching users' });
+  }
+});
+
+// Update user status (admin only)
+router.put('/:id/status', auth, async (req, res) => {
+  try {
+    // Check if user is admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Unauthorized' });
+    }
+
+    const { status } = req.body;
+    if (!['active', 'deactivated'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid status' });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.params.id,
+      { status },
+      { new: true }
+    ).select('-password');
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.json({
+      message: 'User status updated successfully',
+      user: updatedUser
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error updating user status' });
   }
 });
 
